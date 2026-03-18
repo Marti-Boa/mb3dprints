@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Stock Suite Pro</title>
+  <title>Stock Suite INSANE</title>
   <style>
     body { font-family: Arial; background:#0f172a; color:white; margin:0; }
     header { background:#020617; padding:15px; text-align:center; font-size:24px; }
@@ -10,44 +10,52 @@
     button { background:#22c55e; color:white; cursor:pointer; }
     .grid { display:flex; flex-wrap:wrap; }
     .card { width:220px; padding:15px; margin:10px; border-radius:12px; }
-    .stats { display:flex; gap:20px; margin-bottom:20px; }
+    .stats { display:flex; flex-wrap:wrap; gap:15px; margin-bottom:20px; }
     .stat { background:#1e293b; padding:15px; border-radius:10px; }
     table { width:100%; margin-top:20px; border-collapse:collapse; }
     td, th { border:1px solid #334155; padding:8px; }
+    canvas { background:#020617; border-radius:10px; margin-top:20px; }
   </style>
 </head>
 <body>
 
-<header>📦 Stock Suite Pro</header>
+<header>📦 Stock Suite INSANE</header>
 
 <div class="container">
 
-  <div class="stats">
-    <div class="stat">💰 £<span id="money">0</span></div>
-    <div class="stat">📦 Sold: <span id="sold">0</span></div>
-    <div class="stat">⚠️ Low: <span id="low">0</span></div>
-  </div>
+<div class="stats">
+  <div class="stat">💰 £<span id="money">0</span></div>
+  <div class="stat">📦 Sold <span id="sold">0</span></div>
+  <div class="stat">📅 Today £<span id="todayMoney">0</span></div>
+  <div class="stat">🛒 Today <span id="todaySold">0</span></div>
+  <div class="stat">⚠️ Low <span id="low">0</span></div>
+  <div class="stat">🏆 Top: <span id="topItem">None</span></div>
+</div>
 
-  <input id="name" placeholder="Item">
-  <input id="qty" type="number" placeholder="Qty">
-  <input id="color" placeholder="Color">
-  <input id="category" placeholder="Category">
-  <button onclick="addItem()">Add</button>
+<input id="name" placeholder="Item">
+<input id="qty" type="number" placeholder="Qty">
+<input id="price" type="number" step="0.01" placeholder="Price">
+<input id="color" placeholder="Color">
+<input id="category" placeholder="Category">
+<button onclick="addItem()">Add</button>
 
-  <br><br>
-  <input id="search" placeholder="Search..." oninput="renderItems()">
+<br><br>
+<input id="search" placeholder="Search..." oninput="renderItems()">
 
-  <div class="grid" id="items"></div>
+<div class="grid" id="items"></div>
 
-  <h2>Sales</h2>
-  <button onclick="exportCSV()">Export CSV</button>
+<h2>📊 Last 7 Days</h2>
+<canvas id="chart" width="600" height="200"></canvas>
 
-  <table>
-    <thead>
-      <tr><th>Item</th><th>Qty</th><th>£</th><th>Date</th></tr>
-    </thead>
-    <tbody id="sales"></tbody>
-  </table>
+<h2>🧾 Sales</h2>
+<button onclick="exportCSV()">Export CSV</button>
+
+<table>
+<thead>
+<tr><th>Item</th><th>Qty</th><th>£</th><th>Date</th></tr>
+</thead>
+<tbody id="sales"></tbody>
+</table>
 
 </div>
 
@@ -57,83 +65,98 @@ import { getDatabase, ref, set, update, remove, onValue, get, push }
 from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDOROzkHTt9A-bmGyE4TKB0s3ji1h5hNmo",
-  authDomain: "stockmanager-ec621.firebaseapp.com",
-  databaseURL: "https://stockmanager-ec621-default-rtdb.firebaseio.com",
-  projectId: "stockmanager-ec621",
-  storageBucket: "stockmanager-ec621.firebasestorage.app",
-  messagingSenderId: "900423397402",
-  appId: "1:900423397402:web:b25af5bfef18090f1ce1a3",
-  measurementId: "G-55Z9HMYS11"
+  apiKey: "YOUR_KEY",
+  authDomain: "YOUR_DOMAIN",
+  databaseURL: "YOUR_DB_URL",
+  projectId: "YOUR_ID"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+// INPUTS
+const nameInput = document.getElementById("name");
+const qtyInput = document.getElementById("qty");
+const priceInput = document.getElementById("price");
+const colorInput = document.getElementById("color");
+const categoryInput = document.getElementById("category");
+const searchInput = document.getElementById("search");
+
 // ADD ITEM
 window.addItem = async () => {
   let name = nameInput.value;
   let qty = parseInt(qtyInput.value);
+  let price = parseFloat(priceInput.value);
   let color = colorInput.value || "#334155";
   let category = categoryInput.value || "General";
 
-  if (!name || !qty) return;
+  if (!name || !qty || !price) return;
 
-  await set(ref(db, "items/" + name), { qty, color, category });
+  await set(ref(db, "items/" + name), { qty, price, color, category });
 };
 
-// UPDATE QTY
+// UPDATE
 window.updateQty = async (name, change) => {
   let snap = await get(ref(db, "items/" + name));
   let d = snap.val();
-  let q = d.qty + change;
-  if (q < 0) q = 0;
-
+  let q = Math.max(0, d.qty + change);
   await update(ref(db, "items/" + name), { qty: q });
 };
 
 // DELETE
-window.deleteItem = (name) => {
-  if (confirm("Delete?")) remove(ref(db, "items/" + name));
-};
+window.deleteItem = name => remove(ref(db, "items/" + name));
 
 // SELL
 window.sellItem = async (name) => {
   let qty = parseInt(prompt("Qty sold"));
-  let price = parseFloat(prompt("Total price"));
+  if (!qty) return;
 
-  if (!qty || !price) return;
+  let snap = await get(ref(db, "items/" + name));
+  let item = snap.val();
+  let total = item.price * qty;
 
   await updateQty(name, -qty);
 
+  let now = new Date();
+  let dayKey = now.toISOString().split("T")[0];
+
   await push(ref(db, "sales"), {
-    name, qty, price,
-    date: new Date().toLocaleString()
+    name, qty, total,
+    date: now.toLocaleString(),
+    day: dayKey
   });
 
-  let snap = await get(ref(db, "stats"));
-  let s = snap.val() || { money:0, sold:0 };
+  // TOTAL STATS
+  let statSnap = await get(ref(db, "stats"));
+  let stats = statSnap.val() || { money:0, sold:0 };
 
   await set(ref(db, "stats"), {
-    money: s.money + price,
-    sold: s.sold + qty
+    money: stats.money + total,
+    sold: stats.sold + qty
   });
+
+  // DAILY
+  let daySnap = await get(ref(db, "daily/" + dayKey));
+  let d = daySnap.val() || { money:0, sold:0, items:{} };
+
+  d.money += total;
+  d.sold += qty;
+  d.items[name] = (d.items[name] || 0) + qty;
+
+  await set(ref(db, "daily/" + dayKey), d);
 };
 
 // RENDER ITEMS
-window.renderItems = () => {
+function renderItems() {
   onValue(ref(db, "items"), snap => {
-    let container = document.getElementById("items");
-    container.innerHTML = "";
-
-    let search = searchInput.value.toLowerCase();
+    items.innerHTML = "";
     let low = 0;
 
     snap.forEach(c => {
       let name = c.key;
       let d = c.val();
 
-      if (!name.toLowerCase().includes(search)) return;
+      if (!name.toLowerCase().includes(searchInput.value.toLowerCase())) return;
       if (d.qty < 5) low++;
 
       let div = document.createElement("div");
@@ -144,18 +167,51 @@ window.renderItems = () => {
         <h3>${name}</h3>
         <p>${d.category}</p>
         <p>Stock: ${d.qty}</p>
+        <p>£${d.price}</p>
         <button onclick="updateQty('${name}',1)">+</button>
         <button onclick="updateQty('${name}',-1)">-</button>
         <button onclick="sellItem('${name}')">Sell</button>
         <button onclick="deleteItem('${name}')">Delete</button>
       `;
 
-      container.appendChild(div);
+      items.appendChild(div);
     });
 
     lowEl.innerText = low;
   });
-};
+}
+
+// STATS
+onValue(ref(db, "stats"), snap => {
+  let s = snap.val() || { money:0, sold:0 };
+  money.innerText = s.money;
+  sold.innerText = s.sold;
+});
+
+// TODAY + TOP ITEM
+function loadToday() {
+  let key = new Date().toISOString().split("T")[0];
+
+  onValue(ref(db, "daily/" + key), snap => {
+    let d = snap.val() || { money:0, sold:0, items:{} };
+
+    todayMoney.innerText = d.money;
+    todaySold.innerText = d.sold;
+
+    // TOP ITEM
+    let top = "None";
+    let max = 0;
+
+    for (let item in d.items || {}) {
+      if (d.items[item] > max) {
+        max = d.items[item];
+        top = item;
+      }
+    }
+
+    topItem.innerText = top;
+  });
+}
 
 // SALES TABLE
 onValue(ref(db, "sales"), snap => {
@@ -166,27 +222,46 @@ onValue(ref(db, "sales"), snap => {
       <tr>
         <td>${s.name}</td>
         <td>${s.qty}</td>
-        <td>${s.price}</td>
+        <td>${s.total}</td>
         <td>${s.date}</td>
       </tr>`;
   });
 });
 
-// STATS
-onValue(ref(db, "stats"), snap => {
-  let s = snap.val() || { money:0, sold:0 };
-  money.innerText = s.money;
-  sold.innerText = s.sold;
-});
+// CHART
+function loadChart() {
+  const ctx = document.getElementById("chart").getContext("2d");
 
-// EXPORT CSV
+  onValue(ref(db, "daily"), snap => {
+    let data = [];
+
+    snap.forEach(c => {
+      data.push({ date: c.key, money: c.val().money });
+    });
+
+    data.sort((a,b)=> a.date.localeCompare(b.date));
+    data = data.slice(-7);
+
+    ctx.clearRect(0,0,600,200);
+
+    data.forEach((d,i) => {
+      let x = i * 80 + 50;
+      let y = 200 - d.money * 5;
+
+      ctx.fillRect(x, y, 40, d.money * 5);
+      ctx.fillText(d.money, x, y - 5);
+    });
+  });
+}
+
+// CSV
 window.exportCSV = async () => {
   let snap = await get(ref(db, "sales"));
-  let csv = "Item,Qty,Price,Date\n";
+  let csv = "Item,Qty,Total,Date\n";
 
   snap.forEach(c => {
     let s = c.val();
-    csv += `${s.name},${s.qty},${s.price},${s.date}\n`;
+    csv += `${s.name},${s.qty},${s.total},${s.date}\n`;
   });
 
   let blob = new Blob([csv]);
@@ -196,16 +271,12 @@ window.exportCSV = async () => {
   a.click();
 };
 
-// INPUT REFS
-const nameInput = document.getElementById("name");
-const qtyInput = document.getElementById("qty");
-const colorInput = document.getElementById("color");
-const categoryInput = document.getElementById("category");
-const searchInput = document.getElementById("search");
 const lowEl = document.getElementById("low");
 
 // INIT
 renderItems();
+loadToday();
+loadChart();
 
 </script>
 
